@@ -176,8 +176,6 @@ void handleSecondInterrupt(){
       memset(&rec, 0, sizeof(ble_cgms_rec_t));
       Serial.println("Device connected");
 
-      glucoseReading = 110;
-
       rec.glucose_concentration                 = BLEPeripheral::quick_SFLOAT_from_float(glucoseReading);
       rec.sensor_status_annunciation.warning    = 0;
       rec.sensor_status_annunciation.calib_temp = 0;
