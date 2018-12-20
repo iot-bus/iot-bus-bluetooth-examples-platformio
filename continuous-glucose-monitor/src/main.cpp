@@ -139,6 +139,7 @@ void setup() {
 
   // interrupt driven reading and sending
   interruptSetup(); // to handle measurement and sending bluetooth data
+  handleSecondInterrupt(); // set an initial glucose reading of zero
 }
 
 // this is what is returned as a reading if sensor has not been started or started and not ready
@@ -165,23 +166,27 @@ ble_cgms_meas_t rec;
 
 void handleSecondInterrupt(){
 
+  static int minutes;
+
   if(!nfc->CR95HF){
     Serial.println("No CR95HF detected");
   }
   else{
     Serial.println(glucoseReading);
-    if (deviceConnected){
+    //if (deviceConnected){
       // update the bluetooth characteristics   
 
       memset(&rec, 0, sizeof(ble_cgms_rec_t));
       Serial.println("Device connected");
+
+      glucoseReading = 110;
 
       rec.glucose_concentration                 = BLEPeripheral::quick_SFLOAT_from_float(glucoseReading);
       rec.sensor_status_annunciation.warning    = 0;
       rec.sensor_status_annunciation.calib_temp = 0;
       rec.sensor_status_annunciation.status     = 0;
       rec.flags                                 = 0;
-      rec.time_offset                           = 0;
+      rec.time_offset                           = minutes;
       
       bluetooth->pCGM_MEASUREMENT_Characteristic->setValue((uint8_t*) &rec, sizeof(rec));  // and update the heart rate measurement characteristic
       bluetooth->pCGM_MEASUREMENT_Characteristic->notify();
@@ -189,7 +194,8 @@ void handleSecondInterrupt(){
       int batteryLevel = 50;
       bluetooth->pBatteryCharacteristic->setValue(batteryLevel);  // and update the heart rate measurement characteristic
       bluetooth->pBatteryCharacteristic->notify();
-    }
+      minutes++;
+   // }
   }
 }
 
@@ -236,9 +242,9 @@ void interruptSetup(){
   // Attach ISRTr function to our timer.
   timerAttachInterrupt(timer2, &onSecondTimer, true);
 
-  // Set alarm to call isr function every second (value in microseconds).
+  // Set alarm to call isr function every minute (value in microseconds).
   // Repeat the alarm (third parameter)
-  timerAlarmWrite(timer2, 1000000, true);
+  timerAlarmWrite(timer2, 1000000*60, true);
 
   // Start both alarms
   timerAlarmEnable(timer);
