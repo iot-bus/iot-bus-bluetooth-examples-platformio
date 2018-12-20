@@ -2,7 +2,6 @@
 
 #include "soc/spi_struct.h"
 
-
 struct spi_struct_t {
   spi_dev_t * dev;
   #if !CONFIG_DISABLE_HAL_LOCKS
@@ -25,7 +24,8 @@ NFCReader::NFCReader(){
 
 
 void NFCReader::wakeUp(){
-
+    
+    // wake up the CR95HF
     pinMode(IRQPin, OUTPUT);
     digitalWrite(IRQPin, HIGH); 
     delay(10);                      // send a wake up
@@ -37,12 +37,15 @@ void NFCReader::wakeUp(){
 }
 
 float NFCReader::Glucose_Reading(unsigned int val) {
+    
+    // convert raw data to glucose reading mg/dl
     int bitmask = 0x0FFF;
     return ((val & bitmask) / 8.5);
 }
 
 void NFCReader::SetProtocol_Command() {
 
+  // Set 15693 Mode
   vspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE0));
   digitalWrite(SSPin, LOW);
   vspi->transfer(0x00);  // SPI control byte to send command to CR95HF
@@ -74,6 +77,7 @@ void NFCReader::SetProtocol_Command() {
 
 void NFCReader::Inventory_Command() {
 
+  // See if we have a sensor in range (able to read it?)
   vspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE0));
   digitalWrite(SSPin, LOW);
   vspi->transfer(0x00);  // SPI control byte to send command to CR95HF
@@ -106,6 +110,7 @@ void NFCReader::Inventory_Command() {
 
 float NFCReader::Read_Memory() {
 
+  // Read the sensor memory
   byte oneBlock[8];
 
   byte readError = false;
@@ -115,6 +120,7 @@ float NFCReader::Read_Memory() {
   String hexMinutes = "";
 
   String str;
+  
   // trend values from blocks 3 to 15
   for ( int b = 3; b < 16; b++) {
     readTry = 0;
@@ -151,6 +157,7 @@ float NFCReader::Read_Memory() {
     sensorMinutesElapsed = strtoul(hexMinutes.c_str(), NULL, 16);
     Serial.print("Minutes elapsed: ");
     Serial.println(sensorMinutesElapsed); 
+    
     // update from trend data
     return update(trendValues);
   }
@@ -287,8 +294,6 @@ void NFCReader::analyzeTrendData(String& trendValues){
 
 void NFCReader::IDN_Command()
 {
-  byte i = 0;
-
   // step 1 send the command
   vspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE0)); 
   digitalWrite(SSPin, LOW);
@@ -299,31 +304,15 @@ void NFCReader::IDN_Command()
   vspi->endTransaction();
   delay(1);
 
-// step 2, poll for data ready
-// data is ready when a read byte
-// has bit 3 set (ex:  B'0000 1000')
-RXBuffer[0] = 0x00;
-  vspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE0)); 
-  digitalWrite(SSPin, LOW);
-  while(RXBuffer[0] != 8)
-  {
-    RXBuffer[0] = vspi->transfer((uint8_t)0x03);  // Write 3 until
-    RXBuffer[0] = RXBuffer[0] & (uint8_t)0x08;    // bit 3 is set
+  // step 2, poll for data ready
+  // data is ready when a read byte
+  // has bit 3 set (ex:  B'0000 1000')
+  while(!pollReady()){
+    // wait until we receive ready bit
   }
-  digitalWrite(SSPin, HIGH);
-  vspi->endTransaction();
-  delay(1);
-
-// step 3, read the data
-  digitalWrite(SSPin, LOW);
-  vspi->transfer((uint8_t)0x02);   // SPI control byte for read         
-  RXBuffer[0] = vspi->transfer(0);  // response code
-  RXBuffer[1] = vspi->transfer(0);  // length of data
-
-  for (i=0; i < RXBuffer[1] ;i++)      
-      RXBuffer[i+2] = vspi->transfer(0);  // data
-  digitalWrite(SSPin, HIGH);
-  delay(1);
+  
+  // step 3, read the data
+  read(RXBuffer, sizeof(RXBuffer));
   
   if ((RXBuffer[0] == 0) & (RXBuffer[1] == 15))
   {  
