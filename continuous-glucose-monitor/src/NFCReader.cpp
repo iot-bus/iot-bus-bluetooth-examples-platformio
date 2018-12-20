@@ -22,93 +22,14 @@ NFCReader::NFCReader(){
     digitalWrite(SSPin, HIGH);
 }
 
-
-void NFCReader::wakeUp(){
-    
-    // wake up the CR95HF
-    pinMode(IRQPin, OUTPUT);
-    digitalWrite(IRQPin, HIGH); 
-    delay(10);                      // send a wake up
-    digitalWrite(IRQPin, LOW);      // pulse to put the 
-    delayMicroseconds(100);         // BM019 into SPI
-    digitalWrite(IRQPin, HIGH);     // mode 
-    delay(10);
-    //digitalWrite(IRQPin, LOW);
-}
-
-float NFCReader::Glucose_Reading(unsigned int val) {
+float NFCReader::glucoseReading(unsigned int val) {
     
     // convert raw data to glucose reading mg/dl
     int bitmask = 0x0FFF;
     return ((val & bitmask) / 8.5);
 }
 
-void NFCReader::SetProtocol_Command() {
-
-  // Set 15693 Mode
-  vspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE0));
-  digitalWrite(SSPin, LOW);
-  vspi->transfer(0x00);  // SPI control byte to send command to CR95HF
-  vspi->transfer(0x02);  // Set protocol command
-  vspi->transfer(0x02);  // length of data to follow
-  vspi->transfer(0x01);  // code for ISO/IEC 15693
-  vspi->transfer(0x0D);  // Wait for SOF, 10% modulation, append CRC
-  digitalWrite(SSPin, HIGH);
-  vspi->endTransaction();
-  delay(1);
- 
-  while(!pollReady()){
-    // wait until we receive ready bit
-  }
-
-  read(RXBuffer, sizeof(RXBuffer));
-
-  if ((RXBuffer[0] == 0) & (RXBuffer[1] == 0))  // is response code good?
-    {
-    Serial.println("Protocol Set Command OK");
-    NFCReady = 1; // NFC is ready
-    }
-  else
-    {
-    Serial.println("Protocol Set Command FAIL");
-    NFCReady = 0; // NFC not ready
-    }
-}
-
-void NFCReader::Inventory_Command() {
-
-  // See if we have a sensor in range (able to read it?)
-  vspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE0));
-  digitalWrite(SSPin, LOW);
-  vspi->transfer(0x00);  // SPI control byte to send command to CR95HF
-  vspi->transfer(0x04);  // Send Receive CR95HF command
-  vspi->transfer(0x03);  // length of data that follows is 0
-  vspi->transfer(0x26);  // request Flags byte
-  vspi->transfer(0x01);  // Inventory Command for ISO/IEC 15693
-  vspi->transfer(0x00);  // mask length for inventory command
-  digitalWrite(SSPin, HIGH);
-  vspi->endTransaction();
-  delay(1);
- 
-  while(!pollReady()){
-    // wait until we receive ready bit
-  }
-  
-  read(RXBuffer, sizeof(RXBuffer));
-  
-  if (RXBuffer[0] == 128)  // is response code good?
-  {
-    Serial.println("Sensor in range ... OK");
-    NFCReady = 2;
-  }
-  else
-  {
-    Serial.println("Sensor out of range");
-    NFCReady = 1;
-  }
- }
-
-float NFCReader::Read_Memory() {
+float NFCReader::readMemory() {
 
   // Read the sensor memory
   byte oneBlock[8];
@@ -130,7 +51,7 @@ float NFCReader::Read_Memory() {
       if (!readError)       // is response code good?
       { 
         str = convertToString(oneBlock, sizeof(oneBlock));
-        Serial.println(str);
+        // Serial.println(str);
         trendValues += str;
       }
       readTry++;
@@ -144,8 +65,8 @@ float NFCReader::Read_Memory() {
     readError = readBlock(39, oneBlock, sizeof(oneBlock));
     if (!readError)
       str = convertToString(oneBlock, sizeof(oneBlock));
-      Serial.print("Raw elapsed minutes: ");
-      Serial.println(str);
+      //Serial.print("Raw elapsed minutes: ");
+      //Serial.println(str);
       elapsedMinutes = str;
     readTry++;
   } while( (readError) && (readTry < MAX_NFC_READTRIES) );
@@ -162,12 +83,12 @@ float NFCReader::Read_Memory() {
     return update(trendValues);
   }
   else
-    {
-    Serial.print("Read Memory Block Command FAIL");
+  {
+    Serial.println("Read Memory Block Command FAIL");
     NFCReady = 0;
     readError = 0;
-    }
-    return 0;
+  }
+  return 0;
 }
 
 float NFCReader::update(String& trendValues){
@@ -184,14 +105,15 @@ float NFCReader::update(String& trendValues){
   // analyze trend data
   for (int i=8, j=0; i<200; i+=12,j++) {
       String t = trendValues.substring(i+2,i+4) + trendValues.substring(i,i+2);
-      trend[j] = Glucose_Reading(strtoul(t.c_str(), NULL ,16));
-      Serial.println(trend[j]);
+      trend[j] = glucoseReading(strtoul(t.c_str(), NULL ,16));
     }
   
   int validTrendCounter = 0;
   
+  Serial.print("lastGlucose: ");Serial.println(lastGlucose);
   for (int i=0; i<16; i++)
   {
+    Serial.print("Trend ");Serial.print(i);Serial.print(": ");Serial.println(trend[i]);
     if (((lastGlucose - trend[i]) > 50) || ((trend[i] - lastGlucose) > 50)) // invalid trend check
         continue;
     else
@@ -271,28 +193,110 @@ void NFCReader::analyzeTrendData(String& trendValues){
         trendOne = trendValues.substring(i-22,i-20) + trendValues.substring(i-24,i-22);
         trendTwo = trendValues.substring(i-34,i-32) + trendValues.substring(i-36,i-34);
       }
-    }  
-    currentGlucose  = Glucose_Reading(strtoul(trendNow.c_str(), NULL ,16));
-    trendOneGlucose = Glucose_Reading(strtoul(trendOne.c_str(), NULL ,16));
-    trendTwoGlucose = Glucose_Reading(strtoul(trendTwo.c_str(), NULL ,16));
-    
-    if (FirstRun == 1)
-        lastGlucose = currentGlucose;
-        
-    if (((lastGlucose - currentGlucose) > 50) || ((currentGlucose - lastGlucose) > 50))
-    {
-        if (((lastGlucose - trendOneGlucose) > 50) || ((trendOneGlucose - lastGlucose) > 50))
-          currentGlucose = trendTwoGlucose;
-        else
-          currentGlucose = trendOneGlucose;
-    }
+      currentGlucose  = glucoseReading(strtoul(trendNow.c_str(), NULL ,16));
+      trendOneGlucose = glucoseReading(strtoul(trendOne.c_str(), NULL ,16));
+      trendTwoGlucose = glucoseReading(strtoul(trendTwo.c_str(), NULL ,16));
+      
+      if (FirstRun == 1)
+          lastGlucose = currentGlucose;
+          
+      if (((lastGlucose - currentGlucose) > 50) || ((currentGlucose - lastGlucose) > 50))
+      {
+          if (((lastGlucose - trendOneGlucose) > 50) || ((trendOneGlucose - lastGlucose) > 50))
+            currentGlucose = trendTwoGlucose;
+          else
+            currentGlucose = trendOneGlucose;
+      }
+    }    
     ii++;
   }
   Serial.print("Current glucose : ");
   Serial.println(currentGlucose);
 }
 
-void NFCReader::IDN_Command()
+void NFCReader::wakeUp(){
+    
+  // wake up the CR95HF
+  pinMode(IRQPin, OUTPUT);
+  digitalWrite(IRQPin, HIGH); 
+  delay(10);                      // send a wake up
+  digitalWrite(IRQPin, LOW);      // pulse to put the 
+  delayMicroseconds(100);         // BM019 into SPI
+  digitalWrite(IRQPin, HIGH);     // mode 
+  delay(10);
+  //digitalWrite(IRQPin, LOW);
+}
+
+bool NFCReader::setProtocolCommand() {
+
+  // Set 15693 Mode
+  vspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE0));
+  digitalWrite(SSPin, LOW);
+  vspi->transfer(0x00);  // SPI control byte to send command to CR95HF
+  vspi->transfer(0x02);  // Set protocol command
+  vspi->transfer(0x02);  // length of data to follow
+  vspi->transfer(0x01);  // code for ISO/IEC 15693
+  vspi->transfer(0x0D);  // Wait for SOF, 10% modulation, append CRC
+  digitalWrite(SSPin, HIGH);
+  vspi->endTransaction();
+  delay(1);
+ 
+  while(!pollReady()){
+    // wait until we receive ready bit
+  }
+
+  read(RXBuffer, sizeof(RXBuffer));
+
+  if ((RXBuffer[0] == 0) & (RXBuffer[1] == 0))  // is response code good?
+  {
+    Serial.println("Protocol set to 15693");
+    NFCReady = 1; // NFC is ready
+    return true;
+  }
+  else
+  {
+    Serial.println("Protocol NOT set");
+    NFCReady = 0; // NFC not ready
+    return false;
+  }
+}
+
+bool NFCReader::inventoryCommand() {
+
+  // See if we have a sensor in range (able to read it?)
+  vspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE0));
+  digitalWrite(SSPin, LOW);
+  vspi->transfer(0x00);  // SPI control byte to send command to CR95HF
+  vspi->transfer(0x04);  // Send Receive CR95HF command
+  vspi->transfer(0x03);  // length of data that follows is 0
+  vspi->transfer(0x26);  // request Flags byte
+  vspi->transfer(0x01);  // Inventory Command for ISO/IEC 15693
+  vspi->transfer(0x00);  // mask length for inventory command
+  digitalWrite(SSPin, HIGH);
+  vspi->endTransaction();
+  delay(1);
+ 
+  while(!pollReady()){
+    // wait until we receive ready bit
+  }
+  
+  read(RXBuffer, sizeof(RXBuffer));
+  
+  if (RXBuffer[0] == 128)  // is response code good?
+  {
+    Serial.println("Sensor in range ... OK");
+    NFCReady = 2;
+    return true;
+  }
+  else
+  {
+    Serial.println("Sensor out of range");
+    NFCReady = 1;
+  }
+  return false;
+ }
+
+bool NFCReader::idnCommand()
 {
   // step 1 send the command
   vspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE0)); 
@@ -334,16 +338,23 @@ void NFCReader::IDN_Command()
     Serial.print(RXBuffer[RXBuffer[1]],HEX);
     Serial.print(RXBuffer[RXBuffer[1]+1],HEX);
     Serial.println(" ");
+    return true;
   }
-  else
+  else{
     Serial.println("BAD RESPONSE TO IDN COMMAND!");
+    Serial.print("Response: ");
+    Serial.println(RXBuffer[0], HEX);
+    Serial.print("Length: ");
+    Serial.println(RXBuffer[1]);
+  }
 
   Serial.println(" ");
+  return false;
 }
 
 #define   ECHO            0x55
 
-bool NFCReader::EchoResponse()
+bool NFCReader::echo()
 {
   // send the command
   vspi->beginTransaction(SPISettings(spiClk, MSBFIRST, SPI_MODE0)); 
@@ -449,7 +460,7 @@ String NFCReader::convertToString(uint8_t* buffer, uint8_t length){
     pout[1] = hex[ *pin     & 0xF];
   }
   pout[0] = 0;
-  Serial.println(str);
+  //Serial.println(str);
   return String(str);
 }
 

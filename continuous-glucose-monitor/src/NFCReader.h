@@ -70,11 +70,11 @@ class NFCReader{
 
         NFCReader();
         void wakeUp();
-        float Glucose_Reading(unsigned int val);
-        void SetProtocol_Command();
-        void Inventory_Command();
-        float Read_Memory();
-        void IDN_Command();
-        bool EchoResponse();
+        float glucoseReading(unsigned int val);
+        bool setProtocolCommand();
+        bool inventoryCommand();
+        float readMemory();
+        bool idnCommand();
+        bool echo();
 
 };
