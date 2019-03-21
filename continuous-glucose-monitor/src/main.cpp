@@ -47,7 +47,7 @@ void setup() {
 
   // Init and get the time
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  printLocalTime();
+  printLocalTime();Serial.println("");
 
   // Disconnect WiFi as it's no longer needed
   WiFi.disconnect(true);
@@ -59,7 +59,7 @@ void setup() {
   bluetooth->start(pCallbacks);
   
   // setup reader
-  setupNFC();
+  glucoseMeter = new GlucoseMeter();
 
   // interrupt driven reading and sending bluetooth data
   setupInterrupts(); 
@@ -72,7 +72,7 @@ void printLocalTime()
     Serial.println("Failed to obtain time");
     return;
   }
-  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  Serial.print(&timeinfo, "%A, %B %d %Y %H:%M:%S ");
 }
 
 void setupInterrupts(){     
@@ -87,7 +87,7 @@ void setupInterrupts(){
 
   // Set alarm to call isr function every second (value in microseconds).
   // Repeat the alarm (third parameter)
-  timerAlarmWrite(timer, 10000000, true);
+  timerAlarmWrite(timer, 1000000, true);
 
   // Use 2nd timer of 4 (counted from zero).
   // Set 80 divider for prescaler (see ESP32 Technical Reference Manual for more
@@ -99,8 +99,8 @@ void setupInterrupts(){
   timerAttachInterrupt(timer2, &onSecondTimer, true);
 
   // Set alarm to call isr function every minute (value in microseconds).
-  // Repeat the alarm (third parameter) - currently 15 seconds
-  timerAlarmWrite(timer2, 1000000*15, true);
+  // Repeat the alarm (third parameter) - currently 5 seconds
+  timerAlarmWrite(timer2, 1000000*5, true);
 
   // Start both alarms
   timerAlarmEnable(timer);
@@ -144,12 +144,13 @@ void loop() {
 
 void handleSecondInterrupt(){
 
-  static int minutes;
+  static int interrupts;
+  printLocalTime();
   Serial.print("handleSecondInterrupt glucose reading: ");
   Serial.println(glucoseReading);
 
-  if(!nfc->CR95HF){
-    Serial.println("No CR95HF detected");
+  if(!glucoseMeter->ready()){
+    Serial.println("Reader not ready");
   }
   else{
     if (deviceConnected){
@@ -158,24 +159,38 @@ void handleSecondInterrupt(){
       memset(&rec, 0, sizeof(ble_cgms_rec_t));
       Serial.println("Device connected");
 
-      //glucoseReading = 110;
-
-      rec.glucose_concentration                 = BLEPeripheral::quick_SFLOAT_from_float(glucoseReading);
+      int offset = 0;
+      if(glucoseReading > 50){
+        offset = 10;
+      }      
+      if(glucoseReading > 100){
+        offset = 15;
+      }      
+      if(glucoseReading > 200){
+        offset = 20;
+      }
+      
+      rec.glucose_concentration                 =  BLEPeripheral::quick_SFLOAT_from_float(glucoseReading-offset);
       rec.sensor_status_annunciation.warning    = 0;
       rec.sensor_status_annunciation.calib_temp = 0;
       rec.sensor_status_annunciation.status     = 0;
       rec.flags                                 = 0;
-      rec.time_offset                           = minutes;
-      
-      bluetooth->pCGM_MEASUREMENT_Characteristic->setValue((uint8_t*) &rec, sizeof(rec));  // and update the heart rate measurement characteristic
-      bluetooth->pCGM_MEASUREMENT_Characteristic->notify();
+      rec.time_offset                           = 0;
+     
+     void* ptr = &rec;
+     char* cptr = (char*) ptr;
+     for(int i=0;i<sizeof(rec);i++ ){
+       Serial.print((char)*(cptr+i), HEX);
+     }
+     bluetooth->pCGM_MEASUREMENT_Characteristic->setValue((uint8_t*) &rec, sizeof(rec));  // and update the heart rate measurement characteristic
+     bluetooth->pCGM_MEASUREMENT_Characteristic->notify();
 
-      int batteryLevel = 50;
-      bluetooth->pBatteryCharacteristic->setValue(batteryLevel);  // and update the heart rate measurement characteristic
-      bluetooth->pBatteryCharacteristic->notify();
-      minutes++;
+     int batteryLevel = 50;
+     bluetooth->pBatteryCharacteristic->setValue(batteryLevel);  // and update the heart rate measurement characteristic
+     bluetooth->pBatteryCharacteristic->notify();
     }
   }
+  interrupts++;
 }
 
 date_time_t getDateTime(){
@@ -199,44 +214,11 @@ date_time_t getDateTime(){
 void handleInterrupt(){
   
   // return if no sensor detected
-  if(!nfc->CR95HF)
+  if(!glucoseMeter->ready())
     return;
-  // if not ready set protocol
-  if (nfc->NFCReady == 0)
-  {
-    if(!nfc->setProtocolCommand()){ // ISO 15693 settings
-      // return if we could not set protocol
-      return;
-    } 
-  }
-  if (nfc->NFCReady == 1) // sensor is ready
-  {
-    for (int i=0; i<3; i++) {
-      nfc->inventoryCommand(); // sensor in range?
-      if (nfc->NFCReady == 2)
-        break;
-      delay(1000);
-    }
-  }
-  if (nfc->NFCReady == 2){ // sensor is in range
-    glucoseReading = nfc->readMemory();
-  }
+
+  glucoseReading = glucoseMeter->reading();  
+
 }
 
-bool setupNFC(){
-
-  nfc = new NFCReader();
-
-  nfc->wakeUp();
-
-  bool ready = nfc->echo();
-  if(ready){
-    Serial.println("NFC Ready");
-  }
-  else{
-    Serial.println("NFC Not Ready");
-    return false;
-  }
-  return nfc->idnCommand();
-}
 

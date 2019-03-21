@@ -8,6 +8,7 @@
 #include "NFCReader.h"
 #include "BLEPeripheral.h"
 #include "bluetooth_cgm.h"
+#include "GlucoseMeter.h"
 
 const char *ssid     = "NETGEAR96";
 const char *password = "phoebe1984";
@@ -15,7 +16,7 @@ const char *password = "phoebe1984";
 // lock
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
-NFCReader* nfc;
+GlucoseMeter* glucoseMeter;
 BLEPeripheral* bluetooth;
 
 // these variables are volatile because they are used during the interrupt service routine!
@@ -40,7 +41,7 @@ float glucoseReading = 0;
 
 bool deviceConnected;
 
-#define LEDPIN 5
+#define LEDPIN 12
 
 // forward declarations
 void setupInterrupts();

@@ -1,6 +1,0 @@
-{
-    "terminal.integrated.env.osx": {
-        "PATH": "/Users/ian/.platformio/penv/bin:/Users/ian/.platformio/penv:/Users/ian/moddable/build/bin/mac/release:/Users/ian/.nvm/versions/node/v4.4.0/bin:/Users/ian/.rbenv/shims:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Applications/Wireshark.app/Contents/MacOS:/Users/ian/esp/bin:/Users/ian/Documents/Arduino/hardware/espressif/esp32/tools:/Users/ian/esp/bin:/Applications/Zerynth Studio.app/Contents/Resources/app.nw/ztc/mac:/Applications/Zerynth Studio.app/Contents/Resources/app.nw/ztc/mac:/Applications/Visual Studio Code.app/Contents/Resources/app/bin",
-        "PLATFORMIO_CALLER": "vscode"
-    }
-}

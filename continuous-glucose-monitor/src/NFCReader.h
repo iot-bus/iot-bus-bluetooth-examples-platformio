@@ -1,3 +1,6 @@
+#ifndef NFCREADER_H_
+#define NFCREADER_H_
+
 #include <arduino.h>
 #include <SPI.h>
 
@@ -30,51 +33,37 @@
 
 #define MAX_NFC_READTRIES 10 // Amount of tries for every nfc block-scan
 
+enum Status {NOTREADY, READY, INRANGE};
+
 class NFCReader{
     private:
         SPIClass *vspi;
 
         byte RXBuffer[24];
-        byte FirstRun = 1;
-        int noDiffCount = 0;
-        
-        // sensor values
-        int sensorMinutesElapsed;
-        float lastGlucose;
-        float trend[16];
-        float validTrend[16];
-        int glucosePointer;
-
-        float trendOneGlucose;
-        float trendTwoGlucose;
-
-        float currentGlucose = 0;
-        float shownGlucose;
-        float averageGlucose = 0;
         
         static const int spiClk = 1000000; // 1 MHz
+        // const int SSPin = 4;  // Slave Select pin
+        // const int IRQPin = 14;  // interrupt pin
+
         const int SSPin = 5;  // Slave Select pin
-        const int IRQPin = 32;  // Slave Select pin
+        const int IRQPin = 14;  // interrupt pin
 
         bool pollReady();
-        uint8_t read(uint8_t* buffer, uint8_t length);
-        bool readBlock(int block, uint8_t* buffer, uint8_t length);
-        float update(String& trendValues);
-        String convertToString(uint8_t* buffer, uint8_t length);
-        void analyzeTrendData(String& trendValues);        
 
     public:
 
-        byte NFCReady = 0;  // used to track NFC state
+        Status status = NOTREADY;  // used to track NFC state
         bool CR95HF = false; 
 
         NFCReader();
         void wakeUp();
-        float glucoseReading(unsigned int val);
         bool setProtocolCommand();
         bool inventoryCommand();
-        float readMemory();
+        uint8_t read(uint8_t* buffer, uint8_t length);
+        bool readBlock(int block, uint8_t* buffer, uint8_t length);
         bool idnCommand();
         bool echo();
 
 };
+
+#endif
